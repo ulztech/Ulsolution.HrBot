@@ -12,8 +12,8 @@ namespace Ulsolution.HrBot.Dialogs
 { 
     public class EmployeeLoginDialog: ComponentDialog
     {
-        private const string PromptLoginMsgText = "Please enter your user login to start.";
-        private const string RepromptLoginMsgText = "I'm sorry, your have an invalid user login.\nPlease re-enter your user login.";
+        private const string PromptLoginMsgText = "Please key in your Employee ID.";
+        private const string RepromptLoginMsgText = "I'm sorry, that's an invalid Employee ID/Password.\nPlease re-enter your Employee ID.";
           
         private readonly string _dlgUserNameId = "UserNameDialog";
         private readonly string _dlgUserPasswordId = "UserPasswordDialog";
@@ -52,7 +52,7 @@ namespace Ulsolution.HrBot.Dialogs
             var employee = (EmployeeViewModel)stepContext.Options; 
             if (employee.LoginName == null)
             {
-                var promptMessage = MessageFactory.Text(PromptLoginMsgText, PromptLoginMsgText, InputHints.ExpectingInput);
+                var promptMessage = Microsoft.Bot.Builder.MessageFactory.Text(PromptLoginMsgText, PromptLoginMsgText, InputHints.ExpectingInput);
 
                 return await stepContext.PromptAsync(_dlgUserNameId, new PromptOptions
                 {
@@ -76,7 +76,7 @@ namespace Ulsolution.HrBot.Dialogs
              
             return await stepContext.PromptAsync(_dlgUserPasswordId, new PromptOptions
             {
-                Prompt = MessageFactory.Text($"Please enter your password.")
+                Prompt = Microsoft.Bot.Builder.MessageFactory.Text($"Please enter your passkey.")
             }, cancellationtoken);
                    
         }
@@ -103,7 +103,7 @@ namespace Ulsolution.HrBot.Dialogs
                     await userStateAccessors.SetAsync(stepContext.Context,  userProfile, cancellationToken: cancellationToken);
                 
                      
-                    await stepContext.Context.SendActivityAsync($"Welcome back {searchEmp.EmployeeName}!!!", cancellationToken: cancellationToken);
+                    await stepContext.Context.SendActivityAsync($"Welcome back {searchEmp.EmployeeName}!", cancellationToken: cancellationToken);
                     return await stepContext.NextAsync(userProfile, cancellationToken);
                 }  
             }

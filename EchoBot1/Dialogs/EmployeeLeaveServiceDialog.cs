@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Ulsolution.HrBot.Common;
 using Ulsolution.HrBot.Data;
 using Ulsolution.HrBot.Models;
 
@@ -19,8 +20,8 @@ namespace Ulsolution.HrBot.Dialogs
          
         private readonly string _dlgGetMenuOptionId = "GetMenuOptionId";
          
-        private const string _actionCheckLeaveBalance = "Check leave balance";
-        private const string _actionApplyLeave = "Apply new leave";
+        private const string _actionCheckLeaveBalance = "Check Leave Balance";
+        private const string _actionApplyLeave = "Apply Leave";
         private const string _actionLogOut = "Log Out";
         public EmployeeLeaveServiceDialog(ConversationState conversationState, UserState userState, EmployeeApplyLeaveDialog employeeApplyLoan, ILogger<EmployeeLeaveServiceDialog> logger) : base(nameof(EmployeeLeaveServiceDialog))
         {
@@ -44,19 +45,29 @@ namespace Ulsolution.HrBot.Dialogs
             InitialDialogId = nameof(WaterfallDialog);
 
         }
-        private async Task<DialogTurnResult> LeaveServiceIntro(WaterfallStepContext stepContext, CancellationToken cancellationtoken)
+        private async Task<DialogTurnResult> LeaveServiceIntro(WaterfallStepContext stepContext, CancellationToken cancellationToken)
         {
             var userProfile = (UserProfile)stepContext.Options;
-
+            var message = "Is there anything else I can assist you with?";
             var LoanActionList = new List<string> { _actionCheckLeaveBalance, _actionApplyLeave, _actionLogOut };
+
+            if (userProfile.IsFirstTimeLogin)
+            {
+                message = "How may I help you today?";
+                userProfile.IsFirstTimeLogin = false;
+
+                // save profile
+                var userStateAccessors = _userState.CreateProperty<UserProfile>(nameof(UserProfile));
+                await userStateAccessors.SetAsync(stepContext.Context, userProfile, cancellationToken: cancellationToken);
+            }
              
             return await stepContext.PromptAsync(_dlgGetMenuOptionId, new PromptOptions()
             {
-                Prompt = MessageFactory.Text("What can I do for you?"),
+                Prompt = MessageFactory.Text(message),
                 Choices = ChoiceFactory.ToChoices(LoanActionList),
                 RetryPrompt = MessageFactory.Text("Select from the List"),
                 Style = ListStyle.SuggestedAction
-            }, cancellationtoken);
+            }, cancellationToken);
 
         }
          
@@ -69,22 +80,10 @@ namespace Ulsolution.HrBot.Dialogs
             switch (choice.Value)
             {
                 case _actionCheckLeaveBalance:
-                    await stepContext.Context.SendActivityAsync($"Hi {emp.EmployeeName}, here's your leave balances for this year:");
+                    var introText = $"Hi {emp.EmployeeName}, here's the list of Leave Types and its available Leave Balances:";
 
-                    var vl = emp.Leaves.Find(m => m.LeaveTypeId == LeaveType.VacationLeave);
-                    var sl = emp.Leaves.Find(m => m.LeaveTypeId == LeaveType.SickLeave);
-
-                    var messageText = $"VL balance: {vl.LeaveBalance} " +
-                                        $"\nPending (for approval): {vl.FiledLeave}" +
-                                        $"\nSL balance: {sl.LeaveBalance} " +
-                                        $"\nPending (for approval): {sl.FiledLeave}";
-
-                    IMessageActivity message = Activity.CreateMessageActivity();
-                    message.Type = ActivityTypes.Message;
-                    message.Text = messageText;
-                    message.Locale = "en-Us";
-                    message.TextFormat = TextFormatTypes.Plain;
-                    await stepContext.Context.SendActivityAsync(message);
+                    var messageFactory = new HrMessageFactory(emp); 
+                    await stepContext.Context.SendActivityAsync(messageFactory.ShowDetailedLeaveBalances(introText));
                     break;
                 case _actionApplyLeave: 
                     return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationToken); 

@@ -4,9 +4,11 @@ using Microsoft.Bot.Builder.Dialogs.Choices;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Logging;
 using Microsoft.Recognizers.Text.DataTypes.TimexExpression;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Ulsolution.HrBot.Common;
 using Ulsolution.HrBot.Data;
 using Ulsolution.HrBot.Models;
 
@@ -16,9 +18,10 @@ namespace Ulsolution.HrBot.Dialogs
     {
         protected readonly ILogger Logger; 
         private readonly string _dlgNumber = "_dlgNumberId";
-        private readonly string _dlgDate = "_dlgDateId";
+        private readonly string _dlgDateFrom = "_dlgDateFromId";
+        private readonly string _dlgDateTo = "_dlgDateToId";
         private readonly string _dlgGetMenuOption = "_dlgGetMenuOptionId";
-        private const string RepromptMsgText = "I'm sorry, to make your booking please enter a date including Day Month and Year.";
+        private const string RepromptMsgText = "That's an invalid date format \nplease enter a date including Day Month and Year.";
 
         public EmployeeApplyLeaveDialog(ILogger<EmployeeApplyLeaveDialog> logger) : base(nameof(EmployeeApplyLeaveDialog))
         {
@@ -28,7 +31,9 @@ namespace Ulsolution.HrBot.Dialogs
             {
                 LeaveServiceIntro,
                 EnterDateFromAsync,
-                EnterDateToAsync
+                EnterDateToAsync,
+                ConfirmResultToAsync,
+                FinalResultToAsync
                 //UserNameAsync,
                 //GetUserNameAsync,
                 //MobileNumberAsync,
@@ -40,7 +45,8 @@ namespace Ulsolution.HrBot.Dialogs
             AddDialog(new NumberPrompt<int>(_dlgNumber));
             //AddDialog(new ChoicePrompt(DlgLanguageId, ChoiceValidataion));
             AddDialog(new ChoicePrompt(_dlgGetMenuOption));
-            AddDialog(new DateTimePrompt(_dlgDate, DateTimePromptValidator));
+            AddDialog(new DateTimePrompt(_dlgDateFrom, DateTimePromptValidator));
+            AddDialog(new DateTimePrompt(_dlgDateTo, DateTimePromptValidator));
 
             // The initial child Dialog to run.
             InitialDialogId = nameof(WaterfallDialog); 
@@ -59,9 +65,14 @@ namespace Ulsolution.HrBot.Dialogs
                 LoanActionList.Add(enumName.ToString());
             });
 
+            LoanActionList.Add("Cancel");
+
+            var messageFactory = new HrMessageFactory(emp);
+            await stepContext.Context.SendActivityAsync(messageFactory.ShowLeaveBalances());
+
             return await stepContext.PromptAsync(_dlgGetMenuOption, new PromptOptions()
             {
-                Prompt = MessageFactory.Text("Please select the type of leave that you want to apply?"),
+                Prompt = MessageFactory.Text("Please select the type of leave you want to apply."),
                 Choices = ChoiceFactory.ToChoices(LoanActionList),
                 RetryPrompt = MessageFactory.Text("Select from the List"),
                 Style = ListStyle.SuggestedAction
@@ -70,21 +81,33 @@ namespace Ulsolution.HrBot.Dialogs
         }
 
         private async Task<DialogTurnResult> EnterDateFromAsync(WaterfallStepContext stepContext, CancellationToken cancellationtoken)
-        {
-           var userProfile = (UserProfile)stepContext.Options;
+        { 
+            var result = (FoundChoice)stepContext.Result;
+
+            // check if cancelled
+            if (result.Value.Contains("Cancel"))
+            {
+                return await stepContext.EndDialogAsync(null, cancellationtoken);
+            }
+
+            var userProfile = (UserProfile)stepContext.Options;
 
             if (userProfile.FiledLeave == null)
             {
                 userProfile.FiledLeave = new LeaveAppViewModel();
             }
 
-            var result = (FoundChoice)stepContext.Result;
             var selected = (LeaveType)System.Enum.Parse(typeof(LeaveType), result.Value);
+             
+            var emp = await EmployeeFiles.GetEmployee(userProfile.Name);
+            var leaveBalance = emp.Leaves.Find(m => m.LeaveTypeId == selected);
+
             userProfile.FiledLeave.LeaveTypeId = selected;
-              
-            var promptMessage = MessageFactory.Text("Enter date from");
+            userProfile.FiledLeave.LeaveBalance = leaveBalance.LeaveBalance;
+
+            var promptMessage = MessageFactory.Text("When is the Leave start date? (ex Jan 1 2021)");
             var repromptMessage = MessageFactory.Text(RepromptMsgText, RepromptMsgText, InputHints.ExpectingInput);
-            return await stepContext.PromptAsync(_dlgDate, new PromptOptions
+            return await stepContext.PromptAsync(_dlgDateFrom, new PromptOptions
             {
                 Prompt = promptMessage,
                 RetryPrompt = repromptMessage
@@ -102,11 +125,12 @@ namespace Ulsolution.HrBot.Dialogs
                 userProfile.FiledLeave.DateFrom = result[0].Value;
             }
              
-            var promptMessage = MessageFactory.Text("Enter date to");
-
-            return await stepContext.PromptAsync(_dlgDate, new PromptOptions
+            var promptMessage = MessageFactory.Text("When is the Leave end date? (ex Jan 1 2021)"); 
+            var repromptMessage = MessageFactory.Text(RepromptMsgText, RepromptMsgText, InputHints.ExpectingInput);
+            return await stepContext.PromptAsync(_dlgDateTo, new PromptOptions
             {
-                Prompt = promptMessage
+                Prompt = promptMessage,
+                RetryPrompt = repromptMessage
             }, cancellationtoken);
         }
 
@@ -127,5 +151,104 @@ namespace Ulsolution.HrBot.Dialogs
             promptContext.Context.SendActivityAsync(RepromptMsgText, cancellationToken: cancellationToken);
             return Task.FromResult(false);
         }
+
+        private async Task<DialogTurnResult> ConfirmResultToAsync(WaterfallStepContext stepContext, CancellationToken cancellationtoken)
+        {
+            var result = (IList<DateTimeResolution>)stepContext.Result;
+
+            var userProfile = (UserProfile)stepContext.Options;
+
+            if (userProfile.FiledLeave != null && result.Count > 0) 
+                userProfile.FiledLeave.DateTo = result[0].Value; 
+
+            var validate = Compute(userProfile);
+            var messageText = validate.Value;
+
+             
+            if (validate.Key)
+            { 
+                var emp = await EmployeeFiles.GetEmployee(userProfile.Name);
+                var messageFactory = new HrMessageFactory(emp);
+                var messageActivity = messageFactory.ShowFinalLeaveFile(userProfile.FiledLeave);
+                await stepContext.Context.SendActivityAsync(messageActivity);
+
+                var LoanActionList = new List<string>() { "Continue", "Cancel" };
+
+                return await stepContext.PromptAsync(_dlgGetMenuOption, new PromptOptions()
+                {
+                    Prompt = MessageFactory.Text("Please click 'Continue' to confirm."),
+                    Choices = ChoiceFactory.ToChoices(LoanActionList),
+                    RetryPrompt = MessageFactory.Text("Select from the List"),
+                    Style = ListStyle.SuggestedAction
+                }, cancellationtoken);
+            }
+            else
+            {
+                var LoanActionList = new List<string>() { "Yes", "Cancel" };
+
+                return await stepContext.PromptAsync(_dlgGetMenuOption, new PromptOptions()
+                {
+                    Prompt = MessageFactory.Text(messageText),
+                    Choices = ChoiceFactory.ToChoices(LoanActionList),
+                    RetryPrompt = MessageFactory.Text("Select from the List"),
+                    Style = ListStyle.SuggestedAction
+                }, cancellationtoken);
+            }
+
+            //return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationtoken);
+            //return await stepContext.NextAsync(null, cancellationtoken);
+        }
+
+        private async Task<DialogTurnResult> FinalResultToAsync(WaterfallStepContext stepContext, CancellationToken cancellationtoken)
+        {
+            var result = (FoundChoice)stepContext.Result; 
+            var userProfile = (UserProfile)stepContext.Options;
+
+            // check if cancelled
+            if (result.Value.Contains("Yes"))
+            {
+                return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationtoken);
+            }
+            else if (result.Value.Contains("Continue"))
+            {
+                var emp = await EmployeeFiles.GetEmployee(userProfile.Name);
+                var messageFactory = new HrMessageFactory(emp);
+                var messageActivity = messageFactory.MessageAfterContinue();
+                await stepContext.Context.SendActivityAsync(messageActivity);
+
+                return await stepContext.EndDialogAsync(null, cancellationtoken);
+            }
+            else
+                return await stepContext.EndDialogAsync(null, cancellationtoken);
+
+             
+        }
+          
+        private KeyValuePair<bool, string> Compute(UserProfile userProfile)
+        {
+            var isSuccess = false;
+            var message = string.Empty;
+            var dateFrom = Convert.ToDateTime(userProfile.FiledLeave.DateFrom);
+            var dateTo = Convert.ToDateTime(userProfile.FiledLeave.DateTo);
+            var num = dateTo - dateFrom;
+            var numOfLeave = num.Days + 1;
+            var filedLeave = Enum.GetName(typeof(LeaveType), userProfile.FiledLeave.LeaveTypeId);
+
+            if (dateTo < dateFrom)
+                message = "Sorry, you have entered an invalid date or out of scope. Do you want to repeat the steps?";
+
+            var bal = userProfile.FiledLeave.LeaveBalance - userProfile.FiledLeave.FiledLeave;
+            if (bal < numOfLeave)
+            {
+                message = $"It seems that you don't have enough leave balance to proceed with the next steps. Can you apply using other leave type?";
+            }
+
+            if (string.IsNullOrEmpty(message)) 
+                isSuccess = true;
+             
+
+            return new KeyValuePair<bool, string>(isSuccess, message);
+        }
+
     }
 }
