@@ -58,14 +58,19 @@ namespace Ulsolution.HrBot.Common
             var dateTo = Convert.ToDateTime(leaveApplicaiton.DateTo);
             var filedLeave = dateTo - dateFrom;
 
-            var numOfLeave = filedLeave.Days + 1;
+            decimal numOfLeave = filedLeave.Days + 1;
+
+            if (leaveApplicaiton.LeaveDayTypeId == LeaveDayType.Halfday)
+                numOfLeave = 0.5m;
+
+            leaveApplicaiton.FiledLeave = numOfLeave;
 
             var messageText = $"Awesome! Below are the summary of your Leave Application:" +
                               $"\nEmployee ID: {_emp.EmployeeGuid} " +
                               $"\nLeave Type: {leaveApplicaiton.LeaveTypeId.ToString()} " +
                               $"\nLeave Start: {Convert.ToDateTime(leaveApplicaiton.DateFrom).ToShortDateString()} " +
                               $"\nLeave End: {Convert.ToDateTime(leaveApplicaiton.DateTo).ToShortDateString()} " +
-                              $"\nDay Type: XXXXX " +
+                              $"\nDay Type: {leaveApplicaiton.LeaveDayTypeId} " +
                               $"\nTotal Days Filed: {numOfLeave} " +
                               $"\nShall we continue and submit this now?";
 

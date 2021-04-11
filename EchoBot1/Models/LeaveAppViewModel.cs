@@ -8,5 +8,13 @@ namespace Ulsolution.HrBot.Models
         public decimal FiledLeave { get; set; }
         public LeaveType LeaveTypeId { get; set; }
         public decimal LeaveBalance { get; set; }
+        public LeaveDayType LeaveDayTypeId { get; set; }
     }
+
+    public enum LeaveDayType
+    {
+        Halfday = 1,
+        Wholeday = 2
+    }
+
 }
