@@ -172,7 +172,7 @@ namespace Ulsolution.HrBot.Dialogs
                 {
                     Prompt = MessageFactory.Text("Please select the day type."),
                     Choices = ChoiceFactory.ToChoices(dayTypeList),
-                    RetryPrompt = MessageFactory.Text("Select from the List"),
+                    RetryPrompt = MessageFactory.Text("Please select the day type."),
                     Style = ListStyle.SuggestedAction
                 }, cancellationtoken);
             }
@@ -210,7 +210,7 @@ namespace Ulsolution.HrBot.Dialogs
             {
                 Prompt = MessageFactory.Text("Please click 'Continue' to confirm."),
                 Choices = ChoiceFactory.ToChoices(LoanActionList),
-                RetryPrompt = MessageFactory.Text("Select from the List"),
+                RetryPrompt = MessageFactory.Text("Please click 'Continue' to confirm or click 'Cancel' to undo your changes."),
                 Style = ListStyle.SuggestedAction
             }, cancellationtoken); 
              
