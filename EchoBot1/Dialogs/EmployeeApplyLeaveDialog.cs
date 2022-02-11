@@ -172,7 +172,7 @@ namespace Ulsolution.HrBot.Dialogs
                 {
                     Prompt = MessageFactory.Text("Please select the day type."),
                     Choices = ChoiceFactory.ToChoices(dayTypeList),
-                    RetryPrompt = MessageFactory.Text("Select from the List"),
+                    RetryPrompt = MessageFactory.Text("Please select the day type."),
                     Style = ListStyle.SuggestedAction
                 }, cancellationtoken);
             }
@@ -193,8 +193,20 @@ namespace Ulsolution.HrBot.Dialogs
             else
             {
                 var result = (FoundChoice)stepContext.Result;
-                var selected = (LeaveDayType)System.Enum.Parse(typeof(LeaveDayType), result.Value);
-                userProfile.FiledLeave.LeaveDayTypeId = selected;
+
+                if (result != null && !string.IsNullOrWhiteSpace(result.Value) && result.Value.ToLower() == "yes")
+                {
+                    return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationtoken);
+                }
+                else if (result != null && !string.IsNullOrWhiteSpace(result.Value) && result.Value.ToLower() == "cancel")
+                {
+                    return await stepContext.BeginDialogAsync(nameof(EmployeeLeaveServiceDialog), userProfile, cancellationtoken);
+                }
+                else
+                {
+                    var selected = (LeaveDayType)System.Enum.Parse(typeof(LeaveDayType), result.Value);
+                    userProfile.FiledLeave.LeaveDayTypeId = selected;
+                } 
             }
 
             if (userProfile.FiledLeave.LeaveDayTypeId == LeaveDayType.Halfday)
@@ -210,7 +222,7 @@ namespace Ulsolution.HrBot.Dialogs
             {
                 Prompt = MessageFactory.Text("Please click 'Continue' to confirm."),
                 Choices = ChoiceFactory.ToChoices(LoanActionList),
-                RetryPrompt = MessageFactory.Text("Select from the List"),
+                RetryPrompt = MessageFactory.Text("Please click 'Continue' to confirm or click 'Cancel' to undo your changes."),
                 Style = ListStyle.SuggestedAction
             }, cancellationtoken); 
              
@@ -269,24 +281,26 @@ namespace Ulsolution.HrBot.Dialogs
             var result = (FoundChoice)stepContext.Result; 
             var userProfile = (UserProfile)stepContext.Options;
 
-            // check if cancelled
-            if (result.Value.Contains("Yes"))
-            {
-                return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationtoken);
-            }
-            else if (result.Value.Contains("Continue"))
-            {
-                var emp = await EmployeeFiles.GetEmployee(userProfile.Name);
-                var messageFactory = new HrMessageFactory(emp);
-                var messageActivity = messageFactory.MessageAfterContinue();
-                await stepContext.Context.SendActivityAsync(messageActivity);
 
-                return await stepContext.EndDialogAsync(null, cancellationtoken);
-            }
-            else
-                return await stepContext.EndDialogAsync(null, cancellationtoken);
+            if (result != null && !string.IsNullOrWhiteSpace(result.Value))
+            { 
+                // check if cancelled
+                if (result.Value.Contains("Yes"))
+                {
+                    return await stepContext.BeginDialogAsync(nameof(EmployeeApplyLeaveDialog), userProfile, cancellationtoken);
+                }
+                else if (result.Value.Contains("Continue"))
+                {
+                    var emp = await EmployeeFiles.GetEmployee(userProfile.Name);
+                    var messageFactory = new HrMessageFactory(emp);
+                    var messageActivity = messageFactory.MessageAfterContinue();
+                    await stepContext.Context.SendActivityAsync(messageActivity);
 
-             
+                    return await stepContext.EndDialogAsync(null, cancellationtoken);
+                } 
+            }
+
+            return await stepContext.EndDialogAsync(null, cancellationtoken); 
         }
           
         private KeyValuePair<bool, KeyValuePair<int, string>> Compute(UserProfile userProfile)
